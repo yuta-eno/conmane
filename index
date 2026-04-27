@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>スタッフ別応対管理ボード ＆ ログ解析</title>
+<style>
+    :root {
+        --bg-color: #f0f2f5;
+        --panel-bg: #ffffff;
+        --border-color: #d1d5db;
+        --accent-color: #1c305c; /* 和モダン：藍色 */
+        --selected-border: #ea5550; /* 和モダン：朱色 */
+        --in-progress-bg: #fff9f9;
+        --win-color: #2e8b57;
+        --loss-color: #757575;
+        --text-main: #1a1a1a;
+    }
+
+    body {
+        font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
+        margin: 0;
+        display: flex;
+        height: 100vh;
+        background-color: var(--bg-color);
+        color: var(--text-main);
+    }
+
+    /* 左側：サイドバー */
+    #sidebar {
+        width: 320px;
+        background-color: #ffffff;
+        border-right: 1px solid var(--border-color);
+        display: flex;
+        flex-direction: column;
+        padding: 20px;
+        box-shadow: 2px 0 10px rgba(0,0,0,0.05);
+        z-index: 10;
+    }
+
+    #sidebar h2 {
+        font-size: 1.2rem;
+        margin-bottom: 15px;
+        padding-bottom: 10px;
+        border-bottom: 2px solid var(--accent-color);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .btn-log-view {
+        background: var(--selected-border);
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 0.9rem;
+        cursor: pointer;
+        font-weight: bold;
+    }
+
+    #product-list-container {
+        flex: 1;
+        overflow-y: auto;
+        margin-bottom: 20px;
+    }
+
+    .product-btn {
+        width: 100%;
+        padding: 12px;
+        margin-bottom: 8px;
+        background: white;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        text-align: left;
+        font-weight: bold;
+        cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        transition: 0.1s;
+    }
+
+    .product-btn:hover { background: #f8f9fa; }
+    .product-btn:active { transform: scale(0.98); }
+
+    .edit-tools { border-top: 1px solid #eee; padding-top: 15px; }
+    .edit-tools input {
+        width: calc(100% - 20px); padding: 8px; margin-bottom: 10px;
+        border: 1px solid #ccc; border-radius: 4px;
+    }
+    .btn-add {
+        width: 100%; padding: 10px; background: var(--accent-color);
+        color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;
+    }
+    .delete-p-btn { color: #ff4444; font-size: 18px; padding: 0 5px; }
+
+    /* 右側：メインコンテンツ */
+    #main-content {
+        flex: 1; padding: 20px; overflow-y: auto;
+    }
+    .header-area { margin-bottom: 20px; }
+    .grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 15px;
+    }
+
+    /* パネルデザイン */
+    .panel {
+        background: white; border: 2px solid var(--border-color);
+        border-radius: 12px; padding: 15px; transition: border-color 0.2s, box-shadow 0.2s; position: relative;
+        display: flex; flex-direction: column;
+    }
+    .panel.selected { border-color: var(--selected-border); box-shadow: 0 0 10px rgba(234,85,80,0.15); }
+    .panel.active { background-color: var(--in-progress-bg); border-style: solid; }
+
+    .staff-input {
+        width: 100%; font-size: 1.1rem; font-weight: bold; border: none;
+        border-bottom: 1px solid #eee; margin-bottom: 10px; padding: 5px 0; background: transparent;
+    }
+    .staff-input:focus { outline: none; border-bottom: 1px solid var(--accent-color); }
+
+    /* 勧奨商材エリア */
+    .rec-area {
+        flex: 1; min-height: 100px; background: #fafafa; border-radius: 6px;
+        padding: 10px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px;
+    }
+
+    .tag-card {
+        background: white; border: 1px solid #ddd; border-radius: 6px; padding: 8px;
+        display: flex; flex-direction: column; gap: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .tag-card.win { border-color: var(--win-color); background: #f0fdf4; }
+    .tag-card.loss { border-color: var(--loss-color); background: #f9fafb; opacity: 0.8; }
+
+    .tag-header { display: flex; justify-content: space-between; font-size: 0.95rem; font-weight: bold; }
+    .tag-header .remove { cursor: pointer; color: #999; }
+    
+    .tag-actions { display: flex; gap: 5px; }
+    .tag-actions button {
+        flex: 1; padding: 6px 0; border: 1px solid #ddd; background: #fff;
+        border-radius: 4px; cursor: pointer; font-size: 0.8rem; font-weight: bold; transition: 0.1s;
+    }
+    .tag-card.none .btn-win:hover { background: #e8f5e9; border-color: var(--win-color); color: var(--win-color); }
+    .tag-card.none .btn-loss:hover { background: #f5f5f5; border-color: var(--loss-color); color: var(--loss-color); }
+    
+    .tag-card.win .btn-win { background: var(--win-color); color: white; border-color: var(--win-color); }
+    .tag-card.loss .btn-loss { background: var(--loss-color); color: white; border-color: var(--loss-color); }
+
+    .controls { display: flex; gap: 10px; margin-top: auto; }
+    .controls button {
+        flex: 1; padding: 12px; border: none; border-radius: 6px;
+        font-weight: bold; cursor: pointer; font-size: 1rem;
+    }
+    .btn-start { background: var(--accent-color); color: white; }
+    .btn-end { background: #6c757d; color: white; }
+
+    .time-display { font-size: 0.8rem; color: #666; position: absolute; top: 18px; right: 15px; pointer-events: none; }
+
+    #log-modal {
+        display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.6); z-index: 100; justify-content: center; align-items: center;
+    }
+    .modal-content {
+        background: white; width: 90%; max-width: 900px; height: 80vh; border-radius: 12px;
+        padding: 25px; display: flex; flex-direction: column;
+    }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .modal-header h2 { margin: 0; }
+    .modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; }
+    
+    .table-wrapper { flex: 1; overflow-y: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: var(--accent-color); color: white; position: sticky; top: 0; }
+    
+    .log-actions { margin-top: 15px; display: flex; justify-content: flex-end; gap: 10px; }
+    .btn-csv { background: #28a745; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+    .btn-clear-log { background: #dc3545; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+
+</style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <h2>提案商材 <button class="btn-log-view" onclick="toggleLogModal(true)">📊 ログ確認</button></h2>
+        <div id="product-list-container"></div>
+        <div class="edit-tools">
+            <input type="text" id="new-product-name" placeholder="新しい商材名を入力">
+            <button class="btn-add" onclick="addProduct()">＋ 商材を追加</button>
+        </div>
+    </div>
+
+    <div id="main-content">
+        <div class="header-area">
+            <h1 style="margin: 0 0 5px 0;">フロアマネジメントボード</h1>
+            <div style="font-size: 0.95rem; color: #666;">
+                1. パネルを選択 → 2. スタッフ名入力 → 3. 商材を追加 → 4. 応対結果を記録 → 5. 終了でログ保存
+            </div>
+        </div>
+        <div class="grid" id="panel-grid"></div>
+    </div>
+
+    <div id="log-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📋 1日のTotalログ</h2>
+                <button class="modal-close" onclick="toggleLogModal(false)">×</button>
+            </div>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>スタッフ名</th>
+                            <th>開始時刻</th>
+                            <th>終了時刻</th>
+                            <th>応対時間</th>
+                            <th>成約した商材 (Win)</th>
+                            <th>失注した商材 (Loss)</th>
+                            <th>結果未入力</th>
+                        </tr>
+                    </thead>
+                    <tbody id="log-table-body">
+                    </tbody>
+                </table>
+            </div>
+            <div class="log-actions">
+                <button class="btn-csv" onclick="downloadCSV()">📥 CSVで出力</button>
+                <button class="btn-clear-log" onclick="clearAllLogs()">🗑️ ログを全消去</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    // 状態管理
+    let state = {
+        // ★ご指定の初期値に更新
+        products: [
+            "光１G", "光１０G", "Ｈ５Ｇ", "ＧＯＬＤ", "ＧＯＬＤ U", 
+            "プラチナ", "でんき", "ガス", "ｄＶＰ", "Amazon", 
+            "MAX", "ポイ活MAX", "Ｓ４", "Pixel"
+        ],
+        panels: Array.from({ length: 15 }, (_, i) => ({
+            id: i, staffName: "", status: "idle", startTime: null, tags: [] 
+        })),
+        logs: [],
+        selectedPanelId: null
+    };
+
+    function init() {
+        const saved = localStorage.getItem('floor_mgmt_state_v2');
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            // 既存データがある場合も、商材リストだけは今回の初期値を優先するか、
+            // 既存のリストを尊重するか選べますが、今回は指示に合わせてマージ/更新しています。
+            state = parsed;
+            // 商材が空（または初期化直後）の場合は今回のリストをセット
+            if (!state.products || state.products.length === 0) {
+                state.products = [
+                    "光１G", "光１０G", "Ｈ５Ｇ", "ＧＯＬＤ", "ＧＯＬＤ U", 
+                    "プラチナ", "でんき", "ガス", "ｄＶＰ", "Amazon", 
+                    "MAX", "ポイ活MAX", "Ｓ４", "Pixel"
+                ];
+            }
+        }
+        if(!state.logs) state.logs = [];
+        render();
+    }
+
+    function save() { localStorage.setItem('floor_mgmt_state_v2', JSON.stringify(state)); }
+
+    function formatTime(dateObj) {
+        if(!dateObj) return "--:--";
+        const d = new Date(dateObj);
+        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    }
+    
+    function calcDuration(start, end) {
+        if(!start || !end) return "-";
+        const diff = Math.floor((new Date(end) - new Date(start)) / 60000);
+        return `${diff}分`;
+    }
+
+    function addProduct() {
+        const input = document.getElementById('new-product-name');
+        if (input.value.trim()) {
+            state.products.push(input.value.trim());
+            input.value = ''; save(); render();
+        }
+    }
+    function deleteProduct(index, event) {
+        event.stopPropagation();
+        if(confirm('この商材をリストから削除しますか？')) {
+            state.products.splice(index, 1); save(); render();
+        }
+    }
+
+    window.selectPanel = (id) => { 
+        if(state.selectedPanelId === id) return;
+        state.selectedPanelId = id; 
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('selected'));
+        const targetPanel = document.getElementById(`panel-${id}`);
+        if(targetPanel) targetPanel.classList.add('selected');
+    };
+
+    window.updateStaffName = (id, name) => { 
+        state.panels[id].staffName = name; 
+        save(); 
+    };
+
+    window.addTagToSelected = (tagName) => {
+        if (state.selectedPanelId === null) {
+            alert("対象のテーブルパネルを先に選択してください"); return;
+        }
+        const panel = state.panels[state.selectedPanelId];
+        if (!panel.tags.some(t => t.name === tagName)) {
+            panel.tags.push({ name: tagName, status: "none" });
+            save(); render();
+        }
+    };
+
+    window.removeTag = (panelId, index) => {
+        state.panels[panelId].tags.splice(index, 1); save(); render();
+    };
+
+    window.setTagStatus = (panelId, index, statusObj) => {
+        state.panels[panelId].tags[index].status = statusObj; save(); render();
+    };
+
+    window.startSession = (id) => {
+        state.panels[id].status = "active";
+        state.panels[id].startTime = new Date().toISOString();
+        state.selectedPanelId = id;
+        save(); render();
+    };
+
+    window.endSession = (id) => {
+        const panel = state.panels[id];
+        if (panel.status !== "active") {
+            if(confirm("応対中ではありません。内容をクリアしますか？")) clearPanelData(id);
+            return;
+        }
+
+        if (confirm("応対を終了し、結果をログに保存しますか？")) {
+            const endTime = new Date().toISOString();
+            const logEntry = {
+                staff: panel.staffName || "未入力",
+                start: panel.startTime,
+                end: endTime,
+                wins: panel.tags.filter(t => t.status === 'win').map(t => t.name),
+                losses: panel.tags.filter(t => t.status === 'loss').map(t => t.name),
+                nones: panel.tags.filter(t => t.status === 'none').map(t => t.name)
+            };
+            state.logs.push(logEntry);
+            clearPanelData(id);
+        }
+    };
+
+    function clearPanelData(id) {
+        state.panels[id].status = "idle";
+        state.panels[id].startTime = null;
+        state.panels[id].tags = [];
+        save(); render();
+    }
+
+    function render() {
+        document.getElementById('product-list-container').innerHTML = state.products.map((p, i) => `
+            <div class="product-btn" onclick="addTagToSelected('${p}')">
+                ${p} <span class="delete-p-btn" onclick="deleteProduct(${i}, event)">×</span>
+            </div>
+        `).join('');
+
+        document.getElementById('panel-grid').innerHTML = state.panels.map(p => `
+            <div id="panel-${p.id}" class="panel ${p.status === 'active' ? 'active' : ''} ${state.selectedPanelId === p.id ? 'selected' : ''}" 
+                 onclick="selectPanel(${p.id})">
+                <div class="time-display">${p.status === 'active' ? '開始: ' + formatTime(p.startTime) : ''}</div>
+                
+                <input type="text" class="staff-input" placeholder="スタッフ名を入力" 
+                       value="${p.staffName}" 
+                       oninput="updateStaffName(${p.id}, this.value)"
+                       onclick="selectPanel(${p.id}); event.stopPropagation();">
+                
+                <div class="rec-area">
+                    ${p.tags.map((tag, idx) => `
+                        <div class="tag-card ${tag.status}" onclick="event.stopPropagation();">
+                            <div class="tag-header">
+                                ${tag.name} <span class="remove" onclick="removeTag(${p.id}, ${idx})">×</span>
+                            </div>
+                            <div class="tag-actions">
+                                <button class="btn-win" onclick="setTagStatus(${p.id}, ${idx}, 'win')">〇 成約</button>
+                                <button class="btn-loss" onclick="setTagStatus(${p.id}, ${idx}, 'loss')">✕ 失注</button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+
+                <div class="controls" onclick="event.stopPropagation();">
+                    ${p.status === 'idle' 
+                        ? `<button class="btn-start" onclick="startSession(${p.id})">応対開始</button>`
+                        : `<button class="btn-end" onclick="endSession(${p.id})">応対終了 (ログ保存)</button>`
+                    }
+                </div>
+            </div>
+        `).join('');
+    }
+
+    window.toggleLogModal = (show) => {
+        const modal = document.getElementById('log-modal');
+        if(show) { renderLogs(); modal.style.display = 'flex'; } 
+        else { modal.style.display = 'none'; }
+    };
+
+    function renderLogs() {
+        const tbody = document.getElementById('log-table-body');
+        if(state.logs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">まだログがありません</td></tr>';
+            return;
+        }
+        tbody.innerHTML = [...state.logs].reverse().map(log => `
+            <tr>
+                <td><strong>${log.staff}</strong></td>
+                <td>${formatTime(log.start)}</td>
+                <td>${formatTime(log.end)}</td>
+                <td>${calcDuration(log.start, log.end)}</td>
+                <td style="color:var(--win-color); font-weight:bold;">${log.wins.join(', ') || '-'}</td>
+                <td style="color:var(--loss-color);">${log.losses.join(', ') || '-'}</td>
+                <td style="color:#aaa;">${log.nones.join(', ') || '-'}</td>
+            </tr>
+        `).join('');
+    }
+
+    window.clearAllLogs = () => {
+        if(confirm("本当にすべてのログを消去しますか？")) {
+            state.logs = []; save(); renderLogs();
+        }
+    };
+
+    window.downloadCSV = () => {
+        if(state.logs.length === 0) return alert("出力するログがありません。");
+        let csv = "スタッフ名,開始時刻,終了時刻,応対時間(分),成約商材,失注商材,結果未入力\n";
+        state.logs.forEach(log => {
+            const row = [
+                log.staff, formatTime(log.start), formatTime(log.end),
+                calcDuration(log.start, log.end).replace('分',''),
+                `"${log.wins.join(' / ')}"`, `"${log.losses.join(' / ')}"`, `"${log.nones.join(' / ')}"`
+            ];
+            csv += row.join(',') + "\n";
+        });
+        const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+        const blob = new Blob([bom, csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `応対ログ_${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+    };
+
+    init();
+
+</script>
+</body>
+</html>
